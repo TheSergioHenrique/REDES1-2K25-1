@@ -1,0 +1,51 @@
+/* Fundo com degradê do Brasil */
+body {
+    background: linear-gradient(to bottom, #009C3B, #FFCC29);
+    font-family: Arial, sans-serif;
+    color: white;
+    text-align: center;
+    margin: 0;
+    padding: 0;
+}
+
+header {
+    padding: 20px;
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.logo {
+    width: 120px;
+}
+
+h1 {
+    font-size: 32px;
+    margin-top: 10px;
+}
+
+/* Galeria de Imagens */
+.gallery {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 15px;
+    padding: 20px;
+}
+
+.img-box {
+    background: white;
+    padding: 8px;
+    border-radius: 10px;
+    box-shadow: 2px 2px 10px rgba(0, 0, 0, 0.2);
+    transition: transform 0.2s;
+}
+
+.img-box:hover {
+    transform: scale(1.05);
+}
+
+.img-box img {
+    width: 150px;
+    height: 150px;
+    border-radius: 10px;
+    object-fit: cover;
+}
