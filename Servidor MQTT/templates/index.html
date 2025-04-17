@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Conversor de Arquivo - CAPS LOCK</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 font-sans">
+
+  <div class="min-h-screen flex flex-col items-center justify-center p-6">
+    <div class="bg-white shadow-xl rounded-2xl w-full max-w-xl p-8">
+
+      <h1 class="text-3xl font-bold mb-6 text-center text-indigo-600">Conversor de Arquivo (.txt)</h1>
+
+      <form id="uploadForm" class="flex flex-col gap-4">
+        <input 
+          id="fileInput" 
+          type="file" 
+          accept=".txt"
+          class="border border-gray-300 rounded-lg px-4 py-2 text-sm file:bg-indigo-100 file:text-indigo-700 file:border-none file:rounded-md cursor-pointer"
+        />
+
+        <button
+          type="button"
+          onclick="enviarArquivo()"
+          class="bg-indigo-600 text-white py-2 px-6 rounded-lg font-medium hover:bg-indigo-700 transition"
+        >
+          Enviar Arquivo
+        </button>
+      </form>
+
+      <div id="status" class="mt-4 text-center text-sm text-gray-600"></div>
+
+      <div id="outputContainer" class="mt-6 hidden">
+        <h2 class="text-lg font-semibold mb-2 text-gray-700">Resultado:</h2>
+        <div id="output" class="whitespace-pre-wrap bg-gray-50 border border-gray-200 rounded-md p-4 text-sm font-mono text-gray-800 overflow-auto max-h-96"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function enviarArquivo() {
+      const fileInput = document.getElementById("fileInput");
+      const file = fileInput.files[0];
+      const statusEl = document.getElementById("status");
+      const outputContainer = document.getElementById("outputContainer");
+      const outputEl = document.getElementById("output");
+
+      if (!file) {
+        statusEl.textContent = "Selecione um arquivo .txt para enviar.";
+        return;
+      }
+
+      const formData = new FormData();
+      formData.append("file", file);
+
+      statusEl.textContent = "📤 Enviando arquivo ao servidor...";
+      outputContainer.classList.add("hidden");
+
+      fetch("/upload", {
+        method: "POST",
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.error) {
+          statusEl.textContent = "❌ " + data.error;
+          return;
+        }
+        statusEl.textContent = `✅ Arquivo convertido em ${data.duration}s`;
+        outputEl.textContent = data.content;
+        outputContainer.classList.remove("hidden");
+      })
+      .catch(err => {
+        statusEl.textContent = "❌ Erro ao enviar arquivo: " + err.message;
+      });
+    }
+  </script>
+
+</body>
+</html>
