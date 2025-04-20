@@ -174,6 +174,6 @@ O cliente:
 
 ## 👨‍💻 Autoria
 
-Este projeto foi desenvolvido por Miguel,Hugo, Paulo e Sérgio como parte da disciplina **Redes de Computadores 1, no período 2025.1, ministrada pelo professor Hemir Santiago.**.
+Este projeto foi desenvolvido por Miguel,Hugo, Paulo e Sérgio como parte da disciplina **Redes de Computadores 1, no período 2025.1, ministrada pelo professor Hemir Santiago**.
 
 ---
