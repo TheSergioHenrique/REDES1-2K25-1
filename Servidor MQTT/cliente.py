@@ -1,72 +1,64 @@
-import paho.mqtt.client as mqtt     # Biblioteca oficial para cliente MQTT em Python
-import base64                       # Para codificar arquivos em texto (base64)
-import time                         # Para medir tempos de upload/download
-import os                           # Para operações com arquivos locais
-import sys                          # Para pegar argumentos de linha de comando (como client_id)
+import paho.mqtt.client as mqtt
+import base64
+import time
+import os
+import sys
+
+# ================
+# CONFIGURAÇÃO
+# ================
+
+BROKER = "26.93.244.10"
+PORT = 1883
+
+client_id = sys.argv[1] if len(sys.argv) > 1 else "cliente_default"
+
+TOPIC_UPLOAD = f"arquivo/upload/{client_id}"     # Upload exclusivo com ID
+TOPIC_DOWNLOAD = f"arquivo/download/{client_id}" # Download exclusivo
+
+# ================
+# VARIÁVEIS GLOBAIS
+# ================
+
+pending_filename = None
+upload_time = None
 
 # ======================
-# CONFIGURAÇÃO DO BROKER
+# CALLBACK DE DOWNLOAD
 # ======================
-
-BROKER = "localhost"  # IP do broker MQTT (pode ser o localhost ou IP em rede)
-PORT = 1883           # Porta padrão do protocolo MQTT sem TLS
-
-# Tópicos MQTT utilizados:
-TOPIC_UPLOAD = "arquivo/upload"     # Cliente publica arquivos aqui
-TOPIC_DOWNLOAD = "arquivo/download" # Cliente recebe os arquivos processados aqui
-
-# ================================
-# VARIÁVEIS GLOBAIS DE CONTROLE
-# ================================
-
-pending_filename = None  # Guarda o nome do arquivo enviado, esperando a resposta
-upload_time = None       # Marca o tempo de envio para cálculo posterior
-
-# =====================================
-# CALLBACK: QUANDO UMA MENSAGEM É RECEBIDA
-# =====================================
 
 def on_message(client, userdata, msg):
     global upload_time, pending_filename
 
-    download_time = time.time()  # Marca o tempo de chegada da resposta
+    download_time = time.time()
     payload = msg.payload.decode()
-    print(f"\n📩 Mensagem recebida do servidor: {payload}")
 
     try:
-        # O payload é no formato "nome_do_arquivo;base64_conteudo"
         filename, file_data = payload.split(";", 1)
-
-        # Decodifica o conteúdo e salva em um novo arquivo
         with open(filename, "w") as f:
             f.write(base64.b64decode(file_data).decode())
 
-        print(f"✅ Arquivo processado recebido: {filename}")
-        print(f"💾 Salvo como: {filename}")
+        print(f"✅ Arquivo recebido: {filename}")
 
-        # Se o nome bate com o que foi enviado, calcula estatísticas
         if upload_time and pending_filename == filename.replace("CAPS_", ""):
             size = os.path.getsize(filename)
-            upload_duration = download_time - upload_time
-            download_duration = time.time() - download_time
-            print(f"📊 Transferência:")
-            print(f"  📎 Tamanho: {size} bytes")
-            print(f"  ⏱️ Upload: {upload_duration:.2f} s")
-            print(f"  ⏱️ Download: {download_duration:.2f} s")
+            response_time = download_time - upload_time
+            print(f"\n📊 Estatísticas:")
+            print(f"📎 Tamanho: {size} bytes")
+            print(f"⏱️ Tempo de resposta: {response_time:.2f} segundos")
 
     except Exception as e:
-        print(f"❌ Erro ao processar a resposta: {e}")
+        print(f"❌ Erro ao processar resposta: {e}")
 
-    # Reseta variáveis após processamento
     upload_time = None
     pending_filename = None
 
-# ================================
-# FUNÇÃO PARA ESCOLHER ARQUIVO .TXT
-# ================================
+# ==============================
+# SELEÇÃO DO ARQUIVO .TXT
+# ==============================
 
 def select_file():
-    path = input("\n📂 Caminho do arquivo .txt (ou 'sair'): ").strip()
+    path = input("\n📂 Caminho do arquivo (.txt) ou 'sair': ").strip()
     if path.lower() == "sair":
         return None, None
     if not os.path.isfile(path):
@@ -77,61 +69,49 @@ def select_file():
         content = f.read()
     return filename, content
 
-# ====================================
-# CRIAÇÃO DO CLIENTE MQTT
-# ====================================
+# ================
+# CONEXÃO AO BROKER
+# ================
 
-# Nome do cliente pode ser passado via terminal, senão usa default
-client_id = sys.argv[1] if len(sys.argv) > 1 else "cliente_default"
 client = mqtt.Client(client_id=client_id)
-client.on_message = on_message  # Define a função de callback para mensagens
-
-# ====================================
-# CONEXÃO AO BROKER MQTT
-# ====================================
+client.on_message = on_message
 
 print("🔌 Conectando ao broker...")
-client.connect(BROKER, PORT, 60)          # Estabelece conexão com o broker
-client.subscribe(TOPIC_DOWNLOAD)         # Inscreve-se para receber arquivos de volta
-client.loop_start()                      # Inicia o loop de recebimento de mensagens (assíncrono)
-print(f"✅ Cliente '{client_id}' conectado ao broker.\n")
+client.connect(BROKER, PORT, 60)
+client.subscribe(TOPIC_DOWNLOAD)  # Apenas para este cliente
+client.loop_start()
+print(f"✅ Cliente '{client_id}' conectado.\n")
 
-# ====================================
-# LOOP PRINCIPAL: ENVIO DE ARQUIVOS
-# ====================================
+# ==============================
+# LOOP PRINCIPAL
+# ==============================
 
 try:
     while True:
         filename, content = select_file()
-        if not filename or not content:
+        if not filename:
             print("👋 Encerrando cliente.")
             break
 
-        # Codifica o conteúdo para garantir que seja transmitido como texto via MQTT
         encoded_data = base64.b64encode(content.encode()).decode()
-
-        # Guarda nome e tempo de envio para referência
         pending_filename = filename
         upload_time = time.time()
 
-        # Publica no tópico de upload no formato "nome_arquivo;base64_conteudo"
+        # Envia o arquivo para o servidor
         client.publish(TOPIC_UPLOAD, f"{filename};{encoded_data}")
         print(f"📤 Arquivo '{filename}' enviado. Aguardando resposta...\n")
 
-        # Aguarda resposta por até 20 segundos
         wait = 0
-        while upload_time is not None and wait < 20:
+        while upload_time and wait < 20:
             time.sleep(1)
             wait += 1
-        if upload_time is not None:
-            print("⚠️ Tempo de resposta excedido.\n")
+
+        if upload_time:
+            print("⚠️ Tempo limite excedido (20s).\n")
             upload_time = None
             pending_filename = None
 
 except KeyboardInterrupt:
-    print("\n🛑 Cliente interrompido pelo usuário.")
+    print("\n🛑 Cliente interrompido.")
 
-# ====================================
-# FINALIZAÇÃO DO CLIENTE
-# ====================================
-client.loop_stop()  # Encerra o loop de escuta do MQTT
+client.loop_stop()
