@@ -27,6 +27,7 @@ Servidor HTTP/
   ```
   python --version
   ```
+-biblioteca requests-pode ser instalado com um pip install
 
 ### 🚀 Como Executar
 
@@ -121,6 +122,8 @@ No diretório do `mosquitto.exe`:
 ```
 mosquitto.exe -c mosquitto.conf
 ```
+
+#### Instalar Flask no cliente se for rodar server web. pip install flask
 
 #### 2. Iniciar o Servidor MQTT
 Em outro terminal:
