@@ -1,101 +1,145 @@
-import paho.mqtt.client as mqtt   # Cliente MQTT
-import base64                    # Codificação base64 para arquivos
-import time                      # Medição de tempo
-import threading                 # Para executar servidor web em paralelo
-from flask import Flask         # Framework web Flask
+import paho.mqtt.client as mqtt
+import base64
+import time
+import os
+import sys
 
-# ======================
-# CONFIGURAÇÃO DO BROKER
-# ======================
-
-BROKER = "localhost"
+# ==================================================================
+# CONFIGURAÇÃO DO CLIENTE MQTT
+# ==================================================================
+# Define o endereço e porta do broker MQTT
+BROKER = "26.93.244.10"
 PORT = 1883
 
-TOPIC_UPLOAD = "arquivo/upload/#"  # Escuta todos os uploads com ID do cliente no tópico
+# Gera o client_id a partir do argumento de linha de comando ou usa um default
+# Isso permite múltiplos clientes independentes no mesmo broker.
+client_id = sys.argv[1] if len(sys.argv) > 1 else "cliente_default"
 
-# =============================================
-# CALLBACK QUANDO CONECTA AO BROKER
-# =============================================
+# Tópicos exclusivos para upload e download, incorporando client_id
+TOPIC_UPLOAD = f"arquivo/upload/{client_id}"
+TOPIC_DOWNLOAD = f"arquivo/download/{client_id}"
 
-def on_connect(client, userdata, flags, rc):
-    print(f"\n🔌 Conectado ao broker! Código: {rc}")
-    if rc == 0:
-        print(f"🔔 Subscrito ao tópico: {TOPIC_UPLOAD}")
-        client.subscribe(TOPIC_UPLOAD)  # Escuta todos os uploads com ID de cliente
-    else:
-        print("❌ Falha na conexão.")
+# ==================================================================
+# VARIÁVEIS GLOBAIS PARA CONTROLE DE ESTADO
+# ==================================================================
+# Armazena nome do arquivo pendente de resposta e horário de envio
+pending_filename = None
+upload_time = None
 
-# =============================================
-# CALLBACK QUANDO RECEBE UMA MENSAGEM
-# =============================================
-
+# ==================================================================
+# CALLBACK DE RECEPÇÃO (DOWNLOAD)
+# ==================================================================
 def on_message(client, userdata, msg):
-    print(f"\n📥 Mensagem recebida no tópico: {msg.topic}")
+    """
+    Chamado quando chega uma mensagem no tópico de download.
+    Decodifica payload base64, salva em arquivo e calcula estatísticas.
+
+    :param client: instância do cliente MQTT
+    :param userdata: dados do usuário (não utilizado)
+    :param msg: objeto com .topic e .payload (bytes)
+    """
+    global upload_time, pending_filename
+
+    download_time = time.time()  # marca hora de recebimento
+    payload = msg.payload.decode()
 
     try:
-        payload = msg.payload.decode()
-        print(f"📦 Payload recebido: {payload}")
-
-        # Extrai client_id do tópico: ex. "arquivo/upload/cliente123"
-        client_id = msg.topic.split("/")[-1]
-        if not client_id:
-            print("⚠️ ID de cliente não encontrado no tópico.")
-            return
-
-        # Payload: nome.txt;base64conteudo
+        # Payload no formato: "<filename>;<base64_data>"
         filename, file_data = payload.split(";", 1)
-        content = base64.b64decode(file_data).decode().upper()
+        # Decodifica conteúdo e escreve em arquivo local
+        decoded_bytes = base64.b64decode(file_data)
+        with open(filename, "wb") as f:
+            f.write(decoded_bytes)
 
-        # Novo nome para o arquivo processado
-        new_filename = f"CAPS_{filename}"
-        with open(new_filename, "w") as f:
-            f.write(content)
+        print(f"✅ Arquivo recebido: {filename}")
 
-        # Codifica conteúdo novamente
-        new_file_data = base64.b64encode(content.encode()).decode()
-
-        # Publica apenas para o cliente que enviou
-        response_topic = f"arquivo/download/{client_id}"
-        client.publish(response_topic, f"{new_filename};{new_file_data}")
-        print(f"📤 Resposta enviada para {response_topic}")
+        # Se este download corresponde a um upload pendente, calcula estatísticas
+        original_name = filename.replace("CAPS_", "")
+        if upload_time and pending_filename == original_name:
+            size = os.path.getsize(filename)
+            response_time = download_time - upload_time
+            print("\n📊 Estatísticas:")
+            print(f"📎 Tamanho: {size} bytes")
+            print(f"⏱️ Tempo de resposta: {response_time:.2f} segundos")
 
     except Exception as e:
-        print(f"❌ Erro ao processar arquivo: {e}")
+        print(f"❌ Erro ao processar resposta: {e}")
 
-# =============================================
-# FUNÇÃO PARA INICIAR O SERVIDOR WEB FLASK
-# =============================================
+    # Reseta estado após processamento
+    upload_time = None
+    pending_filename = None
 
-def iniciar_servidor_web():
-    app = Flask(__name__)
+# ==================================================================
+# FUNÇÃO DE SELEÇÃO DE ARQUIVO
+# ==================================================================
+def select_file():
+    """
+    Solicita ao usuário o caminho para um arquivo .txt.
+    Retorna (filename, content) ou (None, None) em caso de 'sair'.
+    """
+    path = input("\n📂 Caminho do arquivo (.txt) ou 'sair': ").strip()
+    if path.lower() == "sair":
+        return None, None
 
-    @app.route('/')
-    def home():
-        return "Servidor MQTT está ativo!"
+    if not os.path.isfile(path):
+        print("❌ Arquivo não encontrado.")
+        return select_file()  # tenta novamente
 
-    app.run(port=5000, debug=False)
+    filename = os.path.basename(path)
+    with open(path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return filename, content
 
-# =============================================
-# EXECUÇÃO PRINCIPAL DO SERVIDOR
-# =============================================
+# ==================================================================
+# CONFIGURA E INICIA O CLIENTE MQTT
+# ==================================================================
+# Cria o cliente com ID único e associa callback de mensagem
+client = mqtt.Client(client_id=client_id)
+client.on_message = on_message
 
-def main():
-    print("🚀 Iniciando servidor MQTT...")
-    client = mqtt.Client()
-    client.on_connect = on_connect
-    client.on_message = on_message
-    client.connect(BROKER, PORT, 60)
-    client.loop_start()
+print("🔌 Conectando ao broker...")
+client.connect(BROKER, PORT, keepalive=60)
+# Subscrição ao tópico de download exclusivo deste cliente
+client.subscribe(TOPIC_DOWNLOAD)
+client.loop_start()  # inicia loop em thread separada
+print(f"✅ Cliente '{client_id}' conectado e subscrito em '{TOPIC_DOWNLOAD}'.\n")
 
-    # Inicia o servidor web Flask em uma thread separada
-    threading.Thread(target=iniciar_servidor_web, daemon=True).start()
+# ==================================================================
+# LOOP PRINCIPAL DE UPLOAD
+# ==================================================================
+try:
+    while True:
+        # Seleciona arquivo ou sai
+        filename, content = select_file()
+        if not filename:
+            print("👋 Encerrando cliente.")
+            break
 
-    try:
-        while True:
+        # Codifica conteúdo em base64 para envio
+        encoded_data = base64.b64encode(content.encode()).decode()
+        pending_filename = filename  # guarda nome para estatísticas
+        upload_time = time.time()    # guarda hora de envio
+
+        # Publica payload no tópico de upload
+        payload = f"{filename};{encoded_data}"
+        client.publish(TOPIC_UPLOAD, payload)
+        print(f"📤 Arquivo '{filename}' enviado. Aguardando resposta...\n")
+
+        # Espera por resposta por até 20 segundos
+        wait = 0
+        while upload_time and wait < 20:
             time.sleep(1)
-    except KeyboardInterrupt:
-        print("\n🛑 Servidor encerrado.")
-        client.loop_stop()
+            wait += 1
 
-if __name__ == "__main__":
-    main()
+        # Timeout
+        if upload_time:
+            print("⚠️ Tempo limite excedido (20s).\n")
+            upload_time = None
+            pending_filename = None
+
+except KeyboardInterrupt:
+    # Captura Ctrl+C para desligar graciosamente
+    print("\n🛑 Cliente interrompido pelo usuário.")
+
+# Para o loop do MQTT antes de encerrar
+client.loop_stop()
