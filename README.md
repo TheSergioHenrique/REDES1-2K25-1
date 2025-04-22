@@ -95,7 +95,9 @@ Baixe e instale:
 Adicione ao final do arquivo:
 
 ```
-listener 1883
+listener 1883 0.0.0.0
+listener 9001
+protocol websockets
 allow_anonymous true
 ```
 
